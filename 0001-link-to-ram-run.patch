@@ -1,0 +1,283 @@
+From 84c835a5226bb131f3f666e8faae7962f87ca90b Mon Sep 17 00:00:00 2001
+From: lovegitgit <167554315+lovegitgit@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 16:30:54 +0800
+Subject: [PATCH] link to ram run
+
+---
+ .../KW/KW45B41Z83/gcc/KW45B41Z83xxxA_ram.ld   | 187 ++++++++++++++++++
+ .../KW/KW45B41Z83/gcc/startup_KW45B41Z83.S    |  15 +-
+ .../KW/KW45B41Z83/system_KW45B41Z83.c         |   9 +
+ .../freertos_hello/freertos_hello.c           |   3 +-
+ flags.cmake                                   |   2 +-
+ 5 files changed, 213 insertions(+), 3 deletions(-)
+ create mode 100644 devices/Wireless/KW/KW45B41Z83/gcc/KW45B41Z83xxxA_ram.ld
+
+diff --git a/devices/Wireless/KW/KW45B41Z83/gcc/KW45B41Z83xxxA_ram.ld b/devices/Wireless/KW/KW45B41Z83/gcc/KW45B41Z83xxxA_ram.ld
+new file mode 100644
+index 0000000..40c724b
+--- /dev/null
++++ b/devices/Wireless/KW/KW45B41Z83/gcc/KW45B41Z83xxxA_ram.ld
+@@ -0,0 +1,187 @@
++/*
++** ###################################################################
++**     Processors:          KW45B41Z82AFPA
++**                          KW45B41Z82AFTA
++**                          KW45B41Z83AFPA
++**                          KW45B41Z83AFTA
++**
++**     Compiler:            GNU C Compiler
++**     Reference manual:    Rev. 6, 05/22/2022
++**     Version:             rev. 1.0, 2020-05-12
++**     Build:               b240227
++**
++**     Abstract:
++**         RAM Linker file for the GNU C Compiler (ISP / MBOOT RAM execution)
++**         Avoids ROM Bootloader + comm_buffer reserved region (0x30000000 - 0x30004FFF)
++**
++**     Copyright 2016 Freescale Semiconductor, Inc.
++**     Copyright 2016-2025 NXP
++**     SPDX-License-Identifier: BSD-3-Clause
++**
++** ###################################################################
++*/
++
++/* Entry Point */
++ENTRY(Reset_Handler)
++
++HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x0800;
++STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x0800;
++
++/* Specify the memory areas
++ * Note:
++ * - 0x30000000 ~ 0x30003FFF (16 KB) is reserved for ROM Bootloader & ROM API (RM 15.2).
++ * - 0x30004000 ~ 0x30004FFF (4 KB) is reserved for ROM ISP comm_buffer.
++ * - 0x30005000 ~ 0x3001BFFF (92 KB) is available for RAM application execution:
++ *   44 KB (0x30005000 ~ 0x3000FFFF) for vectors/text/data + 48 KB (0x30010000 ~ 0x3001BFFF) for bss/heap/stack.
++ */
++MEMORY
++{
++  m_interrupts          (RX)  : ORIGIN = 0x30005000, LENGTH = 0x00000400
++  m_text                (RX)  : ORIGIN = 0x30005400, LENGTH = 0x0000AC00
++  m_data1               (RW)  : ORIGIN = 0x30010000, LENGTH = 0x0000C000
++}
++
++/* Define output sections */
++SECTIONS
++{
++  /* The vector table goes first at 0x30005000 (1024-byte aligned for Cortex-M33 VTOR) */
++  .interrupts :
++  {
++    . = ALIGN(4);
++    KEEP(*(.isr_vector))     /* Startup code */
++    . = ALIGN(4);
++  } > m_interrupts
++
++  /* The program code and read-only data go into RAM m_text */
++  .text :
++  {
++    . = ALIGN(4);
++    *(.text)                 /* .text sections (code) */
++    *(.text*)                /* .text* sections (code) */
++    *(.rodata)               /* .rodata sections (constants, strings, etc.) */
++    *(.rodata*)              /* .rodata* sections (constants, strings, etc.) */
++    *(.glue_7)               /* glue arm to thumb code */
++    *(.glue_7t)              /* glue thumb to arm code */
++    *(.eh_frame)
++    KEEP (*(.init))
++    KEEP (*(.fini))
++    . = ALIGN(4);
++  } > m_text
++
++  .ARM.extab :
++  {
++    *(.ARM.extab* .gnu.linkonce.armextab.*)
++  } > m_text
++
++  .ARM :
++  {
++    __exidx_start = .;
++    *(.ARM.exidx*)
++    __exidx_end = .;
++  } > m_text
++
++  .ctors :
++  {
++    __CTOR_LIST__ = .;
++    KEEP (*crtbegin.o(.ctors))
++    KEEP (*crtbegin?.o(.ctors))
++    KEEP (*(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors))
++    KEEP (*(SORT(.ctors.*)))
++    KEEP (*(.ctors))
++    __CTOR_END__ = .;
++  } > m_text
++
++  .dtors :
++  {
++    __DTOR_LIST__ = .;
++    KEEP (*crtbegin.o(.dtors))
++    KEEP (*crtbegin?.o(.dtors))
++    KEEP (*(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors))
++    KEEP (*(SORT(.dtors.*)))
++    KEEP (*(.dtors))
++    __DTOR_END__ = .;
++  } > m_text
++
++  .preinit_array :
++  {
++    PROVIDE_HIDDEN (__preinit_array_start = .);
++    KEEP (*(.preinit_array*))
++    PROVIDE_HIDDEN (__preinit_array_end = .);
++  } > m_text
++
++  .init_array :
++  {
++    PROVIDE_HIDDEN (__init_array_start = .);
++    KEEP (*(SORT(.init_array.*)))
++    KEEP (*(.init_array*))
++    PROVIDE_HIDDEN (__init_array_end = .);
++  } > m_text
++
++  .fini_array :
++  {
++    PROVIDE_HIDDEN (__fini_array_start = .);
++    KEEP (*(SORT(.fini_array.*)))
++    KEEP (*(.fini_array*))
++    PROVIDE_HIDDEN (__fini_array_end = .);
++  } > m_text
++
++  .data :
++  {
++    . = ALIGN(4);
++    __etext = .;             /* In-place in RAM: __etext == __data_start__ */
++    __DATA_ROM = .;
++    __DATA_RAM = .;
++    __data_start__ = .;      /* create a global symbol at data start */
++    *(.ramfunc*)             /* for functions in ram */
++    *(.data)                 /* .data sections */
++    *(.data*)                /* .data* sections */
++    KEEP(*(.jcr*))
++    . = ALIGN(4);
++    __data_end__ = .;        /* define a global symbol at data end */
++  } > m_text
++
++  __DATA_END = __data_end__;
++  text_end = ORIGIN(m_text) + LENGTH(m_text);
++  ASSERT(__DATA_END <= text_end, "region m_text overflowed with text and data")
++
++  /* Uninitialized data section */
++  .bss :
++  {
++    /* This is used by the startup in order to initialize the .bss section */
++    . = ALIGN(4);
++    __START_BSS = .;
++    __bss_start__ = .;
++    *(.bss)
++    *(.bss*)
++    *(COMMON)
++    . = ALIGN(4);
++    __bss_end__ = .;
++    __END_BSS = .;
++  } > m_data1
++
++  .heap :
++  {
++    . = ALIGN(8);
++    __end__ = .;
++    PROVIDE(end = .);
++    __HeapBase = .;
++    . += HEAP_SIZE;
++    __HeapLimit = .;
++    __heap_limit = .; /* Add for _sbrk */
++  } > m_data1
++
++  .stack :
++  {
++    . = ALIGN(8);
++    . += STACK_SIZE;
++  } > m_data1
++
++  /* Initializes stack on the end of block */
++  __StackTop   = ORIGIN(m_data1) + LENGTH(m_data1);
++  __StackLimit = __StackTop - STACK_SIZE;
++  PROVIDE(__stack = __StackTop);
++
++  .ARM.attributes 0 : { *(.ARM.attributes) }
++
++  ASSERT(__StackLimit >= __HeapLimit, "region m_data1 overflowed with stack and heap")
++}
+diff --git a/devices/Wireless/KW/KW45B41Z83/gcc/startup_KW45B41Z83.S b/devices/Wireless/KW/KW45B41Z83/gcc/startup_KW45B41Z83.S
+index c985d11..8ee6ac3 100755
+--- a/devices/Wireless/KW/KW45B41Z83/gcc/startup_KW45B41Z83.S
++++ b/devices/Wireless/KW/KW45B41Z83/gcc/startup_KW45B41Z83.S
+@@ -312,7 +312,20 @@ Reset_Handler:
+     ldr     r1, =.ram_init_ctcm01
+     bics.w  r1, #0x10000000
+     cmp     r0, r1
+-    bcc.n   .ram_init_done      /* Bypass ECC RAM initialization on RAM target, debugger will do the initialization */
++    bcs.n   .ram_init_ctcm01
++
++.ram_target_init_data1:         /* Initialize m_data1 (0x30010000 - 0x3001C000) ECC for RAM target */
++    ldr     r0, =0x30010000
++    ldr     r1, =0x3001C000
++    ldr     r2, =0
++    ldr     r3, =0
++    ldr     r4, =0
++    ldr     r5, =0
++.loop_ram_data1:
++    stmia   r0!, {r2 - r5}
++    cmp     r0, r1
++    bcc.n   .loop_ram_data1
++    b.n     .ram_init_done
+ 
+ .ram_init_ctcm01:               /* Initialize ctcm01 */
+     ldr     r0, =0x4000000
+diff --git a/devices/Wireless/KW/KW45B41Z83/system_KW45B41Z83.c b/devices/Wireless/KW/KW45B41Z83/system_KW45B41Z83.c
+index b35c8c2..0e74a81 100755
+--- a/devices/Wireless/KW/KW45B41Z83/system_KW45B41Z83.c
++++ b/devices/Wireless/KW/KW45B41Z83/system_KW45B41Z83.c
+@@ -71,6 +71,15 @@ uint32_t SystemCoreClock = DEFAULT_SYSTEM_CLOCK;
+    ---------------------------------------------------------------------------- */
+ 
+ __attribute__ ((weak)) void SystemInit (void) {
++  /* Disable SysTick and clear all enabled/pending NVIC interrupts left by ROM ISP bootloader */
++  SysTick->CTRL = 0U;
++  SysTick->VAL  = 0U;
++  for (uint32_t i = 0U; i < 8U; i++)
++  {
++      NVIC->ICER[i] = 0xFFFFFFFFUL;
++      NVIC->ICPR[i] = 0xFFFFFFFFUL;
++  }
++
+ #if ((__FPU_PRESENT == 1) && (__FPU_USED == 1))
+   SCB->CPACR |= ((3UL << 10*2) | (3UL << 11*2));    /* set CP10, CP11 Full Access in Secure mode */
+   #if defined (__ARM_FEATURE_CMSE) && (__ARM_FEATURE_CMSE == 3U)
+diff --git a/examples/freertos_examples/freertos_hello/freertos_hello.c b/examples/freertos_examples/freertos_hello/freertos_hello.c
+index 164d146..b22ed02 100755
+--- a/examples/freertos_examples/freertos_hello/freertos_hello.c
++++ b/examples/freertos_examples/freertos_hello/freertos_hello.c
+@@ -55,9 +55,10 @@ int main(void)
+  */
+ static void hello_task(void *pvParameters)
+ {
++    static uint32_t count = 0;
+     for (;;)
+     {
+-        PRINTF("Hello world.\r\n");
+         vTaskDelay(pdMS_TO_TICKS(1000));
++        PRINTF("Hello world count %d.\r\n", count++);
+     }
+ }
+diff --git a/flags.cmake b/flags.cmake
+index cc86a1b..ec31bbb 100755
+--- a/flags.cmake
++++ b/flags.cmake
+@@ -76,5 +76,5 @@ SET(CMAKE_EXE_LINKER_FLAGS_DEBUG " \
+     -Wl,--no-warn-rwx-segments \
+     ${FPU} \
+     ${SPECS} \
+-    -T\"${ProjDirPath}/devices/Wireless/KW/KW45B41Z83/gcc/KW45B41Z83xxxA_flash.ld\" -static \
++    -T\"${ProjDirPath}/devices/Wireless/KW/KW45B41Z83/gcc/KW45B41Z83xxxA_ram.ld\" -static \
+ ")
+-- 
+2.25.1
+
